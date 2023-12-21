@@ -98,31 +98,37 @@ void setCommand(redisClient *c) {
     int flags = REDIS_SET_NO_FLAGS;
 
     for (j = 3; j < c->argc; j++) {
-        char *a = c->argv[j]->ptr;
-        robj *next = (j == c->argc-1) ? NULL : c->argv[j+1];
+        char *a = c->argv[j]->ptr; //a equal NX/XX/EX/PX
+        //current param if the last param
+        robj *next = (j == c->argc - 1) ? NULL : c->argv[j + 1];
 
         if ((a[0] == 'n' || a[0] == 'N') &&
             (a[1] == 'x' || a[1] == 'X') && a[2] == '\0') {
-            flags |= REDIS_SET_NX;
+            flags |= REDIS_SET_NX; //NX set only not exit
         } else if ((a[0] == 'x' || a[0] == 'X') &&
                    (a[1] == 'x' || a[1] == 'X') && a[2] == '\0') {
-            flags |= REDIS_SET_XX;
+            flags |= REDIS_SET_XX; //XX set only exit
         } else if ((a[0] == 'e' || a[0] == 'E') &&
                    (a[1] == 'x' || a[1] == 'X') && a[2] == '\0' && next) {
-            unit = UNIT_SECONDS;
+            unit = UNIT_SECONDS; //expire unit
             expire = next;
-            j++;
+            j++; //parse two param so j++
         } else if ((a[0] == 'p' || a[0] == 'P') &&
                    (a[1] == 'x' || a[1] == 'X') && a[2] == '\0' && next) {
             unit = UNIT_MILLISECONDS;
             expire = next;
-            j++;
+            j++; //parse two param so j++
         } else {
-            addReply(c,shared.syntaxerr);
+            //syntax err
+            addReply(c, shared.syntaxerr);
             return;
         }
     }
-
+    //try encode value(string)
+    //1. integer
+    //   share obj or not
+    //2. Embedded sds string
+    //3. Raw representation
     c->argv[2] = tryObjectEncoding(c->argv[2]);
     setGenericCommand(c,flags,c->argv[1],c->argv[2],expire,unit,NULL,NULL);
 }
