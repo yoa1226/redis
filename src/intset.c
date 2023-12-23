@@ -83,7 +83,7 @@ static void _intsetSet(intset *is, int pos, int64_t value) {
 
     if (encoding == INTSET_ENC_INT64) {
         ((int64_t*)is->contents)[pos] = value;
-        memrev64ifbe(((int64_t*)is->contents)+pos);
+        memrev64ifbe(((int64_t*)is->contents)+pos);//memrev64ifbe the value of pos
     } else if (encoding == INTSET_ENC_INT32) {
         ((int32_t*)is->contents)[pos] = value;
         memrev32ifbe(((int32_t*)is->contents)+pos);
@@ -158,6 +158,8 @@ static intset *intsetUpgradeAndAdd(intset *is, int64_t value) {
     uint8_t curenc = intrev32ifbe(is->encoding);
     uint8_t newenc = _intsetValueEncoding(value);
     int length = intrev32ifbe(is->length);
+    //upgrade only when |value| > all current  elemeent
+    //so value insert into head or tail
     int prepend = value < 0 ? 1 : 0;
 
     /* First set new encoding and resize */
@@ -168,6 +170,7 @@ static intset *intsetUpgradeAndAdd(intset *is, int64_t value) {
      * Note that the "prepend" variable is used to make sure we have an empty
      * space at either the beginning or the end of the intset. */
     while(length--)
+        //first  length is length-1
         _intsetSet(is,length+prepend,_intsetGetEncoded(is,length,curenc));
 
     /* Set the value at the beginning or the end. */
@@ -181,9 +184,9 @@ static intset *intsetUpgradeAndAdd(intset *is, int64_t value) {
 
 static void intsetMoveTail(intset *is, uint32_t from, uint32_t to) {
     void *src, *dst;
-    uint32_t bytes = intrev32ifbe(is->length)-from;
+    uint32_t bytes = intrev32ifbe(is->length)-from;//the num of ele needed to move
     uint32_t encoding = intrev32ifbe(is->encoding);
-
+    //[1,3,4]-> [1,3,4,''] -> [1,'',3,4] ->[1,2,3,4]
     if (encoding == INTSET_ENC_INT64) {
         src = (int64_t*)is->contents+from;
         dst = (int64_t*)is->contents+to;
@@ -216,12 +219,18 @@ intset *intsetAdd(intset *is, int64_t value, uint8_t *success) {
         /* Abort if the value is already present in the set.
          * This call will populate "pos" with the right position to insert
          * the value when it cannot be found. */
+
+        //not find, but get right position
         if (intsetSearch(is,value,&pos)) {
+            //find
             if (success) *success = 0;
             return is;
         }
 
+        //can't find, need insert, so resize the len.
         is = intsetResize(is,intrev32ifbe(is->length)+1);
+        //note. is-> length is equal the length of before resize
+        //if pos in [0, length), move
         if (pos < intrev32ifbe(is->length)) intsetMoveTail(is,pos,pos+1);
     }
 

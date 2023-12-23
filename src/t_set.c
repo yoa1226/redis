@@ -46,11 +46,13 @@ robj *setTypeCreate(robj *value) {
 
 int setTypeAdd(robj *subject, robj *value) {
     long long llval;
+    //encoding hash table
     if (subject->encoding == REDIS_ENCODING_HT) {
         if (dictAdd(subject->ptr,value,NULL) == DICT_OK) {
             incrRefCount(value);
             return 1;
         }
+        //encodeing int set
     } else if (subject->encoding == REDIS_ENCODING_INTSET) {
         if (isObjectRepresentableAsLongLong(value,&llval) == REDIS_OK) {
             uint8_t success = 0;
@@ -251,6 +253,7 @@ void saddCommand(redisClient *c) {
     robj *set;
     int j, added = 0;
 
+    //first add set to db
     set = lookupKeyWrite(c->db,c->argv[1]);
     if (set == NULL) {
         set = setTypeCreate(c->argv[2]);
@@ -262,6 +265,7 @@ void saddCommand(redisClient *c) {
         }
     }
 
+    //second add element to set
     for (j = 2; j < c->argc; j++) {
         c->argv[j] = tryObjectEncoding(c->argv[j]);
         if (setTypeAdd(set,c->argv[j])) added++;
