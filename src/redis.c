@@ -3667,12 +3667,16 @@ int main(int argc, char **argv) {
         }
         if (configfile) server.configfile = getAbsolutePath(configfile);
         resetServerSaveParams();
+
+        //read config from config file
         loadServerConfig(configfile,options);
         sdsfree(options);
     } else {
         redisLog(REDIS_WARNING, "Warning: no config file specified, using the default config. In order to specify a config file use %s /path/to/%s.conf", argv[0], server.sentinel_mode ? "sentinel" : "redis");
     }
     if (server.daemonize) daemonize();
+
+    //init server: init some config, and init db ,and internal state
     initServer();
     if (server.daemonize) createPidFile();
     redisSetProcTitle(argv[0]);

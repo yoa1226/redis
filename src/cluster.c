@@ -625,6 +625,7 @@ unsigned int keyHashSlot(char *key, int keylen) {
         if (key[s] == '{') break;
 
     /* No '{' ? Hash the whole key. This is the base case. */
+    //0x 3FFF -> 11 1111 1111 1111
     if (s == keylen) return crc16(key,keylen) & 0x3FFF;
 
     /* '{' found? Check if we have the corresponding '}'. */

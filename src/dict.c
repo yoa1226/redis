@@ -178,6 +178,7 @@ dict *dictCreate(dictType *type,
 int _dictInit(dict *d, dictType *type,
         void *privDataPtr)
 {
+    //&(d->ht[0])
     _dictReset(&d->ht[0]);
     _dictReset(&d->ht[1]);
     d->type = type;
@@ -424,9 +425,10 @@ static int dictGenericDelete(dict *d, const void *key, int nofree)
         while(he) {
             if (dictCompareKeys(d, key, he->key)) {
                 /* Unlink the element from the list */
-                if (prevHe)
+                if (prevHe) //not the first entry that equal to he  in the link
                     prevHe->next = he->next;
-                else
+                else //if first entry equals he
+                    //he->next is NULL or not NULL
                     d->ht[table].table[idx] = he->next;
                 if (!nofree) {
                     dictFreeKey(d, he);

@@ -188,19 +188,22 @@ static unsigned int zipIntSize(unsigned char encoding) {
 static unsigned int zipEncodeLength(unsigned char *p, unsigned char encoding, unsigned int rawlen) {
     unsigned char len = 1, buf[5];
 
-    if (ZIP_IS_STR(encoding)) {
+    if (ZIP_IS_STR(encoding)) { //if encoding is integer , encoding first 2 bit(00 or 01 or 10) is less than 11
         /* Although encoding is given it may not be set for strings,
          * so we determine it here using the raw length. */
-        if (rawlen <= 0x3f) {
-            if (!p) return len;
-            buf[0] = ZIP_STR_06B | rawlen;
-        } else if (rawlen <= 0x3fff) {
-            len += 1;
-            if (!p) return len;
-            buf[0] = ZIP_STR_14B | ((rawlen >> 8) & 0x3f);
+        if (rawlen <= 0x3f) { //0x3f -> 0011 1111
+            if (!p) return len; //1
+            buf[0] = ZIP_STR_06B | rawlen; //tag + len
+        } else if (rawlen <= 0x3fff) { //0x3ffff-> 0011 1111 1111 1111
+            len += 1; //2
+            if (!p) return len;//if rawlen =0000 0011 1111 1111
+                                // (rawlen >> 8 = 000 0000 0000 0011
+                                // 000 0000 0000 0011 & 0x3f = 0000 0011
+                                // rawlen & 0xff = 1111 1111
+            buf[0] = ZIP_STR_14B | ((rawlen >> 8) & 0x3f); //01 00 0011
             buf[1] = rawlen & 0xff;
         } else {
-            len += 4;
+            len += 4; // 5
             if (!p) return len;
             buf[0] = ZIP_STR_32B;
             buf[1] = (rawlen >> 24) & 0xff;
@@ -254,11 +257,11 @@ static unsigned int zipPrevEncodeLength(unsigned char *p, unsigned int len) {
         return (len < ZIP_BIGLEN) ? 1 : sizeof(len)+1;
     } else {
         if (len < ZIP_BIGLEN) {
-            p[0] = len;
+            p[0] = len;//1 bytes
             return 1;
         } else {
-            p[0] = ZIP_BIGLEN;
-            memcpy(p+1,&len,sizeof(len));
+            p[0] = ZIP_BIGLEN; //tag
+            memcpy(p+1,&len,sizeof(len)); //write 4 bytes
             memrev32ifbe(p+1);
             return 1+sizeof(len);
         }
@@ -276,6 +279,8 @@ static void zipPrevEncodeLengthForceLarge(unsigned char *p, unsigned int len) {
 
 /* Decode the number of bytes required to store the length of the previous
  * element, from the perspective of the entry pointed to by 'ptr'. */
+// p -> [previous_entry_length_encoding_content]
+//p[0] -> 1 byte, if p[0] = ZIP_BIGLEN(254-1111_1110) -> prvlensize 5 else 1
 #define ZIP_DECODE_PREVLENSIZE(ptr, prevlensize) do {                          \
     if ((ptr)[0] < ZIP_BIGLEN) {                                               \
         (prevlensize) = 1;                                                     \
@@ -286,6 +291,7 @@ static void zipPrevEncodeLengthForceLarge(unsigned char *p, unsigned int len) {
 
 /* Decode the length of the previous element, from the perspective of the entry
  * pointed to by 'ptr'. */
+//p -> [previous_entry_length_encoding_content]
 #define ZIP_DECODE_PREVLEN(ptr, prevlensize, prevlen) do {                     \
     ZIP_DECODE_PREVLENSIZE(ptr, prevlensize);                                  \
     if ((prevlensize) == 1) {                                                  \
@@ -318,18 +324,23 @@ static unsigned int zipRawEntryLength(unsigned char *p) {
 static int zipTryEncoding(unsigned char *entry, unsigned int entrylen, long long *v, unsigned char *encoding) {
     long long value;
 
-    if (entrylen >= 32 || entrylen == 0) return 0;
+    if (entrylen >= 32 || entrylen == 0) return 0; //can't be encode
     if (string2ll((char*)entry,entrylen,&value)) {
         /* Great, the string can be encoded. Check what's the smallest
          * of our encoding types that can hold this value. */
         if (value >= 0 && value <= 12) {
+            //encode and content are encode in 1 byte
+            //ZIP_INT_IMM_MIN 0xf1  ->  /* 1111_0001 */
+
+            //because ZIP_INT_24B(1111_0000) and ZIP_INT_8B(1111_1110)
+            // the encode range of ZIP_INT_IMM_MIN is 0-0000(1111_0001) - 12(13-1)-1110(1111_1101)
             *encoding = ZIP_INT_IMM_MIN+value;
         } else if (value >= INT8_MIN && value <= INT8_MAX) {
-            *encoding = ZIP_INT_8B;
+            *encoding = ZIP_INT_8B; //11111110
         } else if (value >= INT16_MIN && value <= INT16_MAX) {
             *encoding = ZIP_INT_16B;
         } else if (value >= INT24_MIN && value <= INT24_MAX) {
-            *encoding = ZIP_INT_24B;
+            *encoding = ZIP_INT_24B; //11110000
         } else if (value >= INT32_MIN && value <= INT32_MAX) {
             *encoding = ZIP_INT_32B;
         } else {
@@ -416,12 +427,18 @@ static zlentry zipEntry(unsigned char *p) {
 
 /* Create a new empty ziplist. */
 unsigned char *ziplistNew(void) {
-    unsigned int bytes = ZIPLIST_HEADER_SIZE+1;
+    //ZIPLIST_HEADER_SIZE  = int32(total bytes) + int32(tail's elelem offset) + int16(total element)
+    // 4 + 2 + 2 = 10
+    unsigned int bytes = ZIPLIST_HEADER_SIZE+1; //10+1()
     unsigned char *zl = zmalloc(bytes);
-    ZIPLIST_BYTES(zl) = intrev32ifbe(bytes);
+    ZIPLIST_BYTES(zl) = intrev32ifbe(bytes); // store total bytes to first 4 bytes
+    //(*((uint32_t*)(zl))) ->  (uint32_t*)(zl) get the address of first 4 bytes
+
+    //store tail element(current no element) to second 4 byes
     ZIPLIST_TAIL_OFFSET(zl) = intrev32ifbe(ZIPLIST_HEADER_SIZE);
+    //store the num of element to 9-10 byte(2 bytes).
     ZIPLIST_LENGTH(zl) = 0;
-    zl[bytes-1] = ZIP_END;
+    zl[bytes-1] = ZIP_END; //incate the end of ziplist
     return zl;
 }
 
@@ -587,13 +604,26 @@ static unsigned char *__ziplistInsert(unsigned char *zl, unsigned char *p, unsig
     zlentry tail;
 
     /* Find out prevlen for the entry that is inserted. */
+    //case 1. findout prevlen from a entry that p point to.
+    //case 2. findout prevlen from last entry in the zl.
+    //case 3. zl is empty, prevlen = 0.
     if (p[0] != ZIP_END) {
+        //p[0] != ZIP_END -> indicate p point a entry in the ziplist
+        //p -> [previous_entry_length_encoding_content]
+        //prelensize -> 1 byte or 5 bytes
+        //prelen -> total bytes of previous entry
         ZIP_DECODE_PREVLEN(p, prevlensize, prevlen);
     } else {
+        //p[0] == ZIP_END -> indicate p point to ZIP_END
+        //ptail point to last entry or ZIP_END
         unsigned char *ptail = ZIPLIST_ENTRY_TAIL(zl);
         if (ptail[0] != ZIP_END) {
-            prevlen = zipRawEntryLength(ptail);
+            //p[0] == ZIP_END && ptail[0] != ZIP_END
+            //if ptail pint to last entry. prevlen
+            prevlen = zipRawEntryLength(ptail); //total bytes of ptail
         }
+        //else ptail[0] == ZIP_END -> zl is empty -> prevlen = 0
+        //ptail point to ZIP_END, prevlen = 0
     }
 
     /* See if the entry can be encoded */
@@ -607,6 +637,7 @@ static unsigned char *__ziplistInsert(unsigned char *zl, unsigned char *p, unsig
     }
     /* We need space for both the length of the previous entry and
      * the length of the payload. */
+    //len bytes(content) + len bytes(previous entry length 1 or 5) + len bytes (encoding 1 or  2 or 5)
     reqlen += zipPrevEncodeLength(NULL,prevlen);
     reqlen += zipEncodeLength(NULL,encoding,slen);
 
@@ -615,8 +646,13 @@ static unsigned char *__ziplistInsert(unsigned char *zl, unsigned char *p, unsig
      * its prevlen field. */
     int forcelarge = 0;
     nextdiff = (p[0] != ZIP_END) ? zipPrevLenByteDiff(p,reqlen) : 0;
+    //next diff = len(now need to store 1 or 5) - len(old having bytes 1 or 5)
+    //next diff = -4  = 1 -5
+    //reqlen < 4 -> len bytes(content 1 ) + len bytes(previous entry length 1) + len bytes (encoding 1)
+    // => encoding is integer, content is int8(1 byte) or  no content
+    // => encoding is str, content is 1 byte
     if (nextdiff == -4 && reqlen < 4) {
-        nextdiff = 0;
+        nextdiff = 0; //no need to cascade the update
         forcelarge = 1;
     }
 
@@ -628,6 +664,7 @@ static unsigned char *__ziplistInsert(unsigned char *zl, unsigned char *p, unsig
     /* Apply memory move when necessary and update tail offset. */
     if (p[0] != ZIP_END) {
         /* Subtract one because of the ZIP_END bytes */
+        /* void *memmove(void *dst, const void *src, size_t len) */
         memmove(p+reqlen,p-nextdiff,curlen-offset-1+nextdiff);
 
         /* Encode this entry's raw length in the next entry. */
@@ -650,6 +687,7 @@ static unsigned char *__ziplistInsert(unsigned char *zl, unsigned char *p, unsig
         }
     } else {
         /* This element will be the new tail. */
+        //(p - zl) is the start address of last entry
         ZIPLIST_TAIL_OFFSET(zl) = intrev32ifbe(p-zl);
     }
 

@@ -58,7 +58,9 @@ void listTypePush(robj *subject, robj *value, int where) {
     if (subject->encoding == REDIS_ENCODING_ZIPLIST) {
         int pos = (where == REDIS_HEAD) ? ZIPLIST_HEAD : ZIPLIST_TAIL;
         value = getDecodedObject(value);
+        //reset ptr because zl may be malloc new mem
         subject->ptr = ziplistPush(subject->ptr,value->ptr,sdslen(value->ptr),pos);
+        //value already copy to zl
         decrRefCount(value);
     } else if (subject->encoding == REDIS_ENCODING_LINKEDLIST) {
         if (where == REDIS_HEAD) {

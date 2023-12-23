@@ -91,7 +91,7 @@ robj *lookupKeyWriteOrReply(redisClient *c, robj *key, robj *reply) {
  *
  * The program is aborted if the key already exists. */
 void dbAdd(redisDb *db, robj *key, robj *val) {
-    sds copy = sdsdup(key->ptr);
+    sds copy = sdsdup(key->ptr); //why ? not share key?
     int retval = dictAdd(db->dict, copy, val);
 
     redisAssertWithInfo(NULL,key,retval == REDIS_OK);
@@ -123,7 +123,7 @@ void setKey(redisDb *db, robj *key, robj *val) {
     } else {
         dbOverwrite(db,key,val);
     }
-    incrRefCount(val);
+    incrRefCount(val); //note not incrRef key
     removeExpire(db,key);
     signalModifiedKey(db,key);
 }
@@ -848,6 +848,9 @@ int expireIfNeeded(redisDb *db, robj *key) {
      * Still we try to return the right information to the caller,
      * that is, 0 if we think the key should be still valid, 1 if
      * we think the key is expired at this time. */
+
+    //indicate we are a salve
+    //now > when -> not expire ->valid -> 1
     if (server.masterhost != NULL) return now > when;
 
     /* Return when this key has not expired */
