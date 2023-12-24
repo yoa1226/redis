@@ -124,8 +124,17 @@ zskiplistNode *zslInsert(zskiplist *zsl, double score, robj *obj) {
             rank[i] += x->level[i].span;
             x = x->level[i].forward;
         }
+        //specfied level scan over
         update[i] = x;
     }
+    /*
+     * table
+     * level  update[level] rank[level](the rank of skipLisrtNode specified by  updtate[level] in the skip list)
+     *  32      update[32]    rank[32]
+     * ...      ....          ...
+     *  1       update[1]     rank[1]
+     *  0       update[0]     rank[0]
+     */
     /* we assume the key is not already inside, since we allow duplicated
      * scores, and the re-insertion of score and redis object should never
      * happen since the caller of zslInsert() should test in the hash table
@@ -149,6 +158,7 @@ zskiplistNode *zslInsert(zskiplist *zsl, double score, robj *obj) {
         update[i]->level[i].span = (rank[0] - rank[i]) + 1;
     }
 
+    // if level of x < zsl->level
     /* increment span for untouched levels */
     for (i = level; i < zsl->level; i++) {
         update[i]->level[i].span++;
@@ -389,15 +399,19 @@ unsigned long zslGetRank(zskiplist *zsl, double score, robj *o) {
     int i;
 
     x = zsl->header;
-    for (i = zsl->level-1; i >= 0; i--) {
+    for (i = zsl->level-1; i >= 0; i--) { //control the level
         while (x->level[i].forward &&
             (x->level[i].forward->score < score ||
                 (x->level[i].forward->score == score &&
                 compareStringObjects(x->level[i].forward->obj,o) <= 0))) {
+            //next node exist and  < o
+            //indicate: 1. incre rank 2. forward next node
             rank += x->level[i].span;
             x = x->level[i].forward;
         }
-
+        //1. next node is null
+        //2. next score > current score
+        //
         /* x might be equal to zsl->header, so test if obj is non-NULL */
         if (x->obj && equalStringObjects(x->obj,o)) {
             return rank;
@@ -1195,6 +1209,8 @@ void zaddGenericCommand(redisClient *c, int flags) {
 
     /* Parse options. At the end 'scoreidx' is set to the argument position
      * of the score of the first score-element pair. */
+    //ZADD key [NX | XX] [GT | LT] [CH] [INCR] score member [score member ...]
+
     scoreidx = 2;
     while(scoreidx < c->argc) {
         char *opt = c->argv[scoreidx]->ptr;
@@ -1305,11 +1321,15 @@ void zaddGenericCommand(redisClient *c, int flags) {
             zskiplistNode *znode;
             dictEntry *de;
 
+            //ZADD key [NX | XX] [GT | LT] [CH] [INCR] score member [score member ...]
+            //                                           |
+            //                                       init scoreidx
+            //                                          j start 0
             ele = c->argv[scoreidx+1+j*2] =
                 tryObjectEncoding(c->argv[scoreidx+1+j*2]);
             de = dictFind(zs->dict,ele);
             if (de != NULL) {
-                if (nx) continue;
+                if (nx) continue; //NX: Only add new elements. Don't update already existing elements
                 curobj = dictGetKey(de);
                 curscore = *(double*)dictGetVal(de);
 
@@ -1335,7 +1355,7 @@ void zaddGenericCommand(redisClient *c, int flags) {
                     updated++;
                 }
                 processed++;
-            } else if (!xx) {
+            } else if (!xx) {//XX: Only update elements that already exist. Don't add new elements.
                 znode = zslInsert(zs->zsl,score,ele);
                 incrRefCount(ele); /* Inserted in skiplist. */
                 redisAssertWithInfo(c,NULL,dictAdd(zs->dict,ele,&znode->score) == DICT_OK);
